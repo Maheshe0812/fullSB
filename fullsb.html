@@ -1,0 +1,285 @@
+<html>
+  <body>
+    <script type="text/javascript">
+function initEmbeddedMessaging() {
+  try {
+    embeddedservice_bootstrap.settings.language = 'en_US';
+    embeddedservice_bootstrap.settings.enableUserInputForConversationWithBot = false;
+
+    // ============================================================
+    //  Persistent State (Survives Page Navigation)
+    // ============================================================
+    const STORAGE_KEY = "hostComposerState:v1";
+
+    let humanPresent = false;   // TRUE once agent joins
+    let allowOpen    = false;   // TRUE when last bot message is in allowList
+
+    function loadState() {
+      try {
+        const raw = sessionStorage.getItem(STORAGE_KEY);
+        if (!raw) {
+          console.log("[host persist] No storage found. Using defaults.");
+          return;
+        }
+        const s = JSON.parse(raw);
+        humanPresent = !!s.humanPresent;
+        allowOpen    = !!s.allowOpen;
+
+        console.log("[host persist] LOADED →",
+          { humanPresent, allowOpen }
+        );
+      } catch (e) {
+        console.warn("[host persist] Load error:", e);
+      }
+    }
+
+    function saveState() {
+      try {
+        sessionStorage.setItem(
+          STORAGE_KEY,
+          JSON.stringify({ humanPresent, allowOpen })
+        );
+        console.log("[host persist] SAVED →", { humanPresent, allowOpen });
+      } catch (e) {
+        console.warn("[host persist] Save error:", e);
+      }
+    }
+
+    // Load prior state BEFORE we wire listeners
+    loadState();
+
+
+    // ============================================================
+    // allowList & Helpers
+    // ============================================================
+    const allowList = new Set([
+      'can you try again by entering your valid phone number in the format of 1234567890?',
+      "i couldn't capture your email address, do you want to try again?",
+      "sorry, i didn't understand that. please provide a valid email address.",
+      "we're looking forward to connecting.",
+      "this info will help me connect you with an associate."
+    ]);
+    const norm = s => (s || '').trim().replace(/\s+/g, ' ').toLowerCase();
+
+
+    // ============================================================
+    // Post Enable/Disable to Iframe
+    // ============================================================
+    function postIframeEnable() {
+      const iframe = document.getElementById('embeddedMessagingFrame');
+      if (!iframe?.src) return;
+      iframe.contentWindow.postMessage('InputEnable', new URL(iframe.src).origin);
+
+      console.log("%c[composer] ENABLE →",
+        "color: green",
+        { humanPresent, allowOpen }
+      );
+    }
+
+    function postIframeDisable() {
+      const iframe = document.getElementById('embeddedMessagingFrame');
+      if (!iframe?.src) return;
+      iframe.contentWindow.postMessage('InputDisable', new URL(iframe.src).origin);
+
+      console.log("%c[composer] DISABLE →",
+        "color: crimson",
+        { humanPresent, allowOpen }
+      );
+    }
+
+
+    // ============================================================
+    // Single Decision Point
+    // ============================================================
+    function updateComposer(eventName = "updateComposer") {
+      console.log(`[EVENT → ${eventName}] updateComposer called`, {
+        humanPresent,
+        allowOpen
+      });
+
+      if (humanPresent || allowOpen) postIframeEnable();
+      else postIframeDisable();
+
+      saveState();
+    }
+
+
+    // ============================================================
+    // Bot Text Gating
+    // ============================================================
+    window.evaluateAndToggle = function handleMessageText(raw) {
+      const text = norm(raw);
+      allowOpen = allowList.has(text);
+
+      console.log(`[bot-text handler] allowOpen=${allowOpen}`, {
+        text,
+        humanPresent,
+        allowOpen
+      });
+
+      updateComposer("evaluateAndToggle");
+    };
+
+
+    // Prevent flash on first load
+    window.addEventListener("load", () => {
+      console.log("[EVENT → window.load]");
+      const iframe = document.getElementById('embeddedMessagingFrame');
+      if (iframe) iframe.addEventListener('load', () => updateComposer("iframe.load"));
+    });
+
+
+    // ============================================================
+    // onEmbeddedMessageSent — Bot/Agent/Customer messages
+    // ============================================================
+    window.addEventListener('onEmbeddedMessageSent', (event) => {
+      console.log("[EVENT → onEmbeddedMessageSent]", { humanPresent, allowOpen });
+
+      const ce = event?.detail?.conversationEntry;
+      if (!ce?.entryPayload) return;
+
+      try {
+        const parsed = JSON.parse(ce.entryPayload);
+        const messageText = parsed?.abstractMessage?.staticContent?.text;
+
+        console.log("[onEmbeddedMessageSent] Message Parsed →", {
+          messageText,
+          humanPresent,
+          allowOpen
+        });
+
+        window.evaluateAndToggle(messageText);
+      } catch (e) {
+        console.warn("[onEmbeddedMessageSent] Parse error:", e);
+      }
+    });
+
+
+    // ============================================================
+    // Participant Change — Look for Agent Join
+    // ============================================================
+    window.addEventListener("onEmbeddedMessagingConversationParticipantChanged", (evt) => {
+      console.log("[EVENT → onEmbeddedMessagingConversationParticipantChanged] Fired");
+
+      const entryStr = evt?.detail?.conversationEntry?.entryPayload;
+      if (typeof entryStr !== "string") {
+        console.warn("[participantChanged] Invalid payload");
+        return;
+      }
+
+      try {
+        const parsed = JSON.parse(entryStr);
+        const entries = Array.isArray(parsed.entries) ? parsed.entries : [];
+
+        const first = entries[0] || {};
+        const role  = first?.participant?.role;
+        const op    = first?.operation;
+
+        console.log("[participantChanged] Parsed →", { role, op });
+
+        if (role === "Agent" && op === "add") {
+          humanPresent = true;
+        }
+        else if (role === "Agent" && op === "remove") {
+          humanPresent = false;  // If you want sticky agent, REMOVE THIS LINE.
+        }
+        else if (role === "Chatbot" && op === "add") {
+          humanPresent = false;
+        }
+
+        console.log("[participantChanged] Updated Flags →", {
+          humanPresent,
+          allowOpen
+        });
+
+        updateComposer("participantChanged");
+      } catch (e) {
+        console.error("[participantChanged] Parse error:", e);
+      }
+    });
+
+
+    // ============================================================
+    // Lifecycle Events
+    // ============================================================
+    window.addEventListener("onEmbeddedMessagingReady", () => {
+      console.log("[EVENT → onEmbeddedMessagingReady]");
+      loadState();
+      updateComposer("onEmbeddedMessagingReady");
+    });
+
+    window.addEventListener("onEmbeddedMessagingSessionStarted", () => {
+      console.log("[EVENT → onEmbeddedMessagingSessionStarted]");
+      updateComposer("onEmbeddedMessagingSessionStarted");
+    });
+
+    window.addEventListener("onEmbeddedMessagingSessionStatusUpdate", (evt) => {
+      console.log("[EVENT → onEmbeddedMessagingSessionStatusUpdate]", evt.detail);
+
+      const status = String(
+        evt?.detail?.status || evt?.detail?.sessionStatus || ""
+      ).toLowerCase();
+
+      if (status === "ended" || status === "terminated" || status === "closed") {
+        console.log("[sessionStatusUpdate] TERMINAL STATUS → CLEARING STATE");
+        humanPresent = false;
+        allowOpen = false;
+        saveState();
+      }
+
+      updateComposer("onEmbeddedMessagingSessionStatusUpdate");
+    });
+
+
+    // ============================================================
+    // Init Embedded Messaging
+    // ============================================================
+    embeddedservice_bootstrap.init(
+                '00DSu0000017YcH',
+                'Chatbot_Shopify_Staging',
+                'https://tonal--full.sandbox.my.site.com/ESWChatbotShopifyStagin1760115575505',
+                {
+                    scrt2URL: 'https://tonal--full.sandbox.my.salesforce-scrt.com'
+                }
+            );
+
+  } catch (err) {
+    console.error("Error loading Embedded Messaging:", err);
+  }
+}
+</script>
+
+<script>
+//
+// Dispatcher events
+//
+window.addEventListener("message", (event) => {
+  if (
+    event.data?.method === "EMBEDDED_MESSAGING_DISPATCH_EVENT_TO_HOST" &&
+    event.data?.data?.eventDetails?.conversationEntry?.entryPayload
+  ) {
+    console.log("[EVENT → DISPATCHER message]", event.data);
+
+    try {
+      const payload = JSON.parse(
+        event.data.data.eventDetails.conversationEntry.entryPayload
+      );
+      const messageText = payload?.abstractMessage?.staticContent?.text;
+
+      console.log("[dispatcher] Message Parsed →", messageText);
+
+      window.evaluateAndToggle?.(messageText);
+    } catch (e) {
+      console.warn("[dispatcher] Parse error:", e);
+    }
+  }
+});
+</script>
+
+<script
+  type="text/javascript"
+  src="https://tonal--full.sandbox.my.site.com/ESWChatbotShopifyStagin1760115575505/assets/js/bootstrap.min.js"
+  onload="initEmbeddedMessaging()">
+</script>
+  </body>
+</html>
