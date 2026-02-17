@@ -1,7 +1,33 @@
 <html>
+  <head>
+    <style type='text/css'>
+            button.embeddedMessagingConversationButton {
+                background-image: url("https://tonal--full--c.sandbox.vf.force.com/resource/1760121258000/TonalChatbot") !important;
+                background-size: 60px 60px !important;
+                background-repeat: no-repeat !important;
+                background-position: center !important;
+                background-color: rgba(0, 112, 210, 0.5); !important;
+                width: 60px !important;
+                height: 60px !important;
+                display: block !important;
+               
+                border: none !important;
+                border-radius: 50 !important;
+            }
+
+            .embeddedMessagingConversationButtonWrapper {
+                box-shadow: none !important;
+                border-radius: 0 !important;
+            }
+        button.embeddedMessagingConversationButton svg {
+                display: none !important;
+            }
+
+            
+        </style>
+  </head>
   <body>
-    <Apex:page >
-<script type="text/javascript">
+    <script type="text/javascript">
 function initEmbeddedMessaging() {
   try {
     embeddedservice_bootstrap.settings.language = 'en_US';
@@ -205,6 +231,7 @@ function initEmbeddedMessaging() {
     // ============================================================
     window.addEventListener("onEmbeddedMessagingReady", () => {
       console.log("[EVENT → onEmbeddedMessagingReady]");
+      embeddedservice_bootstrap.prechatAPI.setHiddenPrechatFields({"BotSource": "Non-PDP"});
       loadState();
       updateComposer("onEmbeddedMessagingReady");
     });
@@ -236,13 +263,13 @@ function initEmbeddedMessaging() {
     // Init Embedded Messaging
     // ============================================================
     embeddedservice_bootstrap.init(
-                '00DSu0000017YcH',
-                'Chatbot_Shopify_Staging',
-                'https://tonal--full.sandbox.my.site.com/ESWChatbotShopifyStagin1760115575505',
-                {
-                    scrt2URL: 'https://tonal--full.sandbox.my.salesforce-scrt.com'
-                }
-            );
+				'00DSu0000017YcH',
+				'Chatbot_Shopify_NON_PDP',
+				'https://tonal--full.sandbox.my.site.com/ESWChatbotShopifyNONPD1771224928437',
+				{
+					scrt2URL: 'https://tonal--full.sandbox.my.salesforce-scrt.com'
+				}
+			);
 
   } catch (err) {
     console.error("Error loading Embedded Messaging:", err);
@@ -277,11 +304,7 @@ window.addEventListener("message", (event) => {
 });
 </script>
 
-<script
-  type="text/javascript"
-  src="https://tonal--full.sandbox.my.site.com/ESWChatbotShopifyStagin1760115575505/assets/js/bootstrap.min.js"
-  onload="initEmbeddedMessaging()">
-</script>
-</Apex:page>
+<script type='text/javascript' src='https://tonal--full.sandbox.my.site.com/ESWChatbotShopifyNONPD1771224928437/assets/js/bootstrap.min.js' onload='initEmbeddedMessaging()'></script>
+
   </body>
 </html>
